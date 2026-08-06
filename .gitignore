@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+
+coverage.db
+chroma_data/
+
+embeddings.npy
+
+.vscode/
+.idea/
+
+.DS_Store
