@@ -1,23 +1,26 @@
 import sqlite3
 import chromadb
 
-# -----------------------------
-# Connect SQLite
-# -----------------------------
+# ---------------------------------
+# SQLite Connection
+# ---------------------------------
+
 conn = sqlite3.connect("coverage.db")
 cursor = conn.cursor()
 
-# -----------------------------
-# Connect ChromaDB
-# -----------------------------
+# ---------------------------------
+# ChromaDB Connection
+# ---------------------------------
+
 client = chromadb.PersistentClient(path="chroma_data")
 collection = client.get_collection("coverage_kb")
 
-
-# -----------------------------
+# ---------------------------------
 # Question Classifier
-# -----------------------------
+# ---------------------------------
+
 def classify(question):
+
     q = question.lower()
 
     structured_keywords = [
@@ -57,62 +60,35 @@ def classify(question):
     return "structured"
 
 
-# -----------------------------
-# SQL Lookup
-# -----------------------------
+# ---------------------------------
+# SQL Retrieval
+# ---------------------------------
+
 def sql_lookup(question):
 
     q = question.lower()
 
     try:
 
-        if "copay" in q:
-
-            cursor.execute("""
-            SELECT *
-            FROM plans
-            """)
-
-        elif "deductible" in q:
-
-            cursor.execute("""
-            SELECT *
-            FROM plans
-            """)
-
-        elif "premium" in q:
-
-            cursor.execute("""
-            SELECT *
-            FROM plans
-            """)
-
-        elif "claim" in q or "status" in q:
-
-            cursor.execute("""
-            SELECT *
-            FROM claims
-            """)
+        if "claim" in q or "status" in q:
+            cursor.execute("SELECT * FROM claims")
 
         else:
-
-            cursor.execute("""
-            SELECT *
-            FROM plans
-            """)
+            cursor.execute("SELECT * FROM plans")
 
         rows = cursor.fetchall()
 
-        return rows
+        return [str(row) for row in rows]
 
     except Exception as e:
 
         return [str(e)]
 
 
-# -----------------------------
-# Vector Lookup
-# -----------------------------
+# ---------------------------------
+# Vector Retrieval
+# ---------------------------------
+
 def vector_lookup(question):
 
     try:
@@ -122,98 +98,80 @@ def vector_lookup(question):
             n_results=5
         )
 
-        docs = results["documents"][0]
-
-        return docs
+        return results["documents"][0]
 
     except Exception as e:
 
         return [str(e)]
 
 
-# -----------------------------
-# Retrieval Engine
-# -----------------------------
+# ---------------------------------
+# Main Retrieval Function
+# ---------------------------------
+
 def retrieve(question):
 
     route = classify(question)
 
-    final_context = []
+    context = []
 
     if route == "structured":
 
-        final_context.extend(sql_lookup(question))
+        context.extend(sql_lookup(question))
 
     elif route == "unstructured":
 
-        final_context.extend(vector_lookup(question))
+        context.extend(vector_lookup(question))
 
-    elif route == "both":
+    else:
 
-        final_context.extend(sql_lookup(question))
-        final_context.extend(vector_lookup(question))
+        context.extend(sql_lookup(question))
+        context.extend(vector_lookup(question))
 
-    # remove duplicates
+    # Remove duplicates
 
     unique = []
 
-    for item in final_context:
+    for item in context:
 
         if item not in unique:
             unique.append(item)
 
-    return route, unique
+    return "\n".join(str(x) for x in unique)
 
 
-# -----------------------------
-# Test Harness
-# -----------------------------
-questions = [
+# ---------------------------------
+# Test
+# ---------------------------------
 
-    "What is my copay?",
+if __name__ == "__main__":
 
-    "What is my deductible?",
+    questions = [
 
-    "What is the monthly premium?",
+        "What is my copay?",
+        "What is my deductible?",
+        "What is monthly premium?",
+        "Claim status",
+        "Bronze coverage",
+        "Silver maternity",
+        "Gold mental health",
+        "Hospital coverage",
+        "Enrollment eligibility",
+        "Bronze deductible and maternity"
 
-    "What is claim status?",
+    ]
 
-    "Bronze plan coverage",
-
-    "Silver maternity coverage",
-
-    "Gold mental health benefits",
-
-    "Hospital coverage",
-
-    "Enrollment eligibility",
-
-    "Bronze deductible and maternity coverage"
-
-]
-
-
-print("=" * 70)
-print("DAY 10 RETRIEVAL ENGINE TEST")
-print("=" * 70)
-
-for i, q in enumerate(questions, start=1):
-
-    route, context = retrieve(q)
-
-    print("\n")
     print("=" * 70)
-    print("Test :", i)
-    print("Question :", q)
-    print("Classification :", route)
-    print("Retrieved Results :")
+    print("DAY 11 RETRIEVAL TEST")
+    print("=" * 70)
 
-    for item in context:
-        print(item)
+    for i, question in enumerate(questions, start=1):
 
-print("\n")
-print("=" * 70)
-print("Testing Completed Successfully")
-print("=" * 70)
+        print("\n")
+        print("=" * 70)
+        print(f"Question {i}: {question}")
+        print("-" * 70)
 
-conn.close()
+        print(retrieve(question))
+
+    conn.close()

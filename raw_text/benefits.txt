@@ -5,3 +5,20 @@ Emergency services are covered.
 Prescription drugs are included.
 Preventive care is covered at no cost.
 Mental health services are covered.
+Summary of Benefits and Coverage
+
+Primary care visits are covered.
+Specialist visits require referral.
+Emergency services are covered.
+Prescription drugs are included.
+Preventive care is covered at no cost.
+Mental health services are covered.
+
+Maternity care is covered.
+Prenatal visits are included.
+Labor and delivery are covered.
+Postnatal care is covered.
+
+Silver HMO covers maternity services with standard copay.
+Bronze HMO provides limited maternity coverage.
+Gold PPO provides comprehensive maternity coverage.
