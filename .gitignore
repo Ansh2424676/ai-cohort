@@ -8,3 +8,5 @@ embeddings.npy
 .idea/
 .DS_Store
 .env
+
+adapters/
