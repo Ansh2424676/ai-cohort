@@ -1,25 +1,69 @@
 import sqlite3
+from pathlib import Path
+
 import chromadb
 
-# ---------------------------------
-# SQLite Connection
-# ---------------------------------
 
-conn = sqlite3.connect("coverage.db")
+# ============================================================
+# PROJECT ROOT
+# ============================================================
+
+ROOT_DIR = Path(__file__).resolve().parent
+
+
+# ============================================================
+# DATABASE PATHS
+# ============================================================
+
+SQLITE_DB_PATH = ROOT_DIR / "coverage.db"
+CHROMA_DB_PATH = ROOT_DIR / "chroma_data"
+
+
+# ============================================================
+# SQLITE CONNECTION
+# ============================================================
+
+conn = sqlite3.connect(
+    str(SQLITE_DB_PATH),
+    check_same_thread=False
+)
+
 cursor = conn.cursor()
 
-# ---------------------------------
-# ChromaDB Connection
-# ---------------------------------
 
-client = chromadb.PersistentClient(path="chroma_data")
-collection = client.get_collection("coverage_kb")
+# ============================================================
+# CHROMADB CONNECTION
+# ============================================================
 
-# ---------------------------------
-# Question Classifier
-# ---------------------------------
+client = chromadb.PersistentClient(
+    path=str(CHROMA_DB_PATH)
+)
 
-def classify(question):
+
+# ============================================================
+# COVERAGE KNOWLEDGE COLLECTION
+# ============================================================
+
+try:
+
+    collection = client.get_collection(
+        name="coverage_kb"
+    )
+
+except Exception as error:
+
+    raise RuntimeError(
+        f"Could not load ChromaDB collection 'coverage_kb'. "
+        f"Expected location: {CHROMA_DB_PATH}. "
+        f"Original error: {error}"
+    )
+
+
+# ============================================================
+# QUESTION CLASSIFIER
+# ============================================================
+
+def classify(question: str) -> str:
 
     q = question.lower()
 
@@ -45,8 +89,15 @@ def classify(question):
         "eligibility"
     ]
 
-    structured = any(word in q for word in structured_keywords)
-    unstructured = any(word in q for word in unstructured_keywords)
+    structured = any(
+        word in q
+        for word in structured_keywords
+    )
+
+    unstructured = any(
+        word in q
+        for word in unstructured_keywords
+    )
 
     if structured and unstructured:
         return "both"
@@ -60,36 +111,47 @@ def classify(question):
     return "structured"
 
 
-# ---------------------------------
-# SQL Retrieval
-# ---------------------------------
+# ============================================================
+# SQL RETRIEVAL
+# ============================================================
 
-def sql_lookup(question):
+def sql_lookup(question: str):
 
     q = question.lower()
 
     try:
 
         if "claim" in q or "status" in q:
-            cursor.execute("SELECT * FROM claims")
+
+            cursor.execute(
+                "SELECT * FROM claims"
+            )
 
         else:
-            cursor.execute("SELECT * FROM plans")
+
+            cursor.execute(
+                "SELECT * FROM plans"
+            )
 
         rows = cursor.fetchall()
 
-        return [str(row) for row in rows]
+        return [
+            str(row)
+            for row in rows
+        ]
 
-    except Exception as e:
+    except Exception as error:
 
-        return [str(e)]
+        return [
+            f"SQL retrieval error: {error}"
+        ]
 
 
-# ---------------------------------
-# Vector Retrieval
-# ---------------------------------
+# ============================================================
+# VECTOR RETRIEVAL
+# ============================================================
 
-def vector_lookup(question):
+def vector_lookup(question: str):
 
     try:
 
@@ -98,80 +160,161 @@ def vector_lookup(question):
             n_results=5
         )
 
-        return results["documents"][0]
+        documents = results.get(
+            "documents",
+            [[]]
+        )
 
-    except Exception as e:
+        if documents and documents[0]:
 
-        return [str(e)]
+            return documents[0]
+
+        return []
+
+    except Exception as error:
+
+        return [
+            f"Vector retrieval error: {error}"
+        ]
 
 
-# ---------------------------------
-# Main Retrieval Function
-# ---------------------------------
+# ============================================================
+# MAIN RETRIEVAL FUNCTION
+# ============================================================
 
-def retrieve(question):
+def retrieve(question: str) -> str:
 
     route = classify(question)
 
     context = []
 
+    # --------------------------------------------------------
+    # Structured retrieval
+    # --------------------------------------------------------
+
     if route == "structured":
 
-        context.extend(sql_lookup(question))
+        context.extend(
+            sql_lookup(question)
+        )
+
+    # --------------------------------------------------------
+    # Unstructured retrieval
+    # --------------------------------------------------------
 
     elif route == "unstructured":
 
-        context.extend(vector_lookup(question))
+        context.extend(
+            vector_lookup(question)
+        )
+
+    # --------------------------------------------------------
+    # Both retrieval methods
+    # --------------------------------------------------------
 
     else:
 
-        context.extend(sql_lookup(question))
-        context.extend(vector_lookup(question))
+        context.extend(
+            sql_lookup(question)
+        )
 
+        context.extend(
+            vector_lookup(question)
+        )
+
+    # --------------------------------------------------------
     # Remove duplicates
+    # --------------------------------------------------------
 
     unique = []
 
     for item in context:
 
         if item not in unique:
+
             unique.append(item)
 
-    return "\n".join(str(x) for x in unique)
+    # --------------------------------------------------------
+    # Return combined context
+    # --------------------------------------------------------
+
+    return "\n".join(
+        str(item)
+        for item in unique
+    )
 
 
-# ---------------------------------
-# Test
-# ---------------------------------
+# ============================================================
+# TEST
+# ============================================================
 
 if __name__ == "__main__":
 
     questions = [
 
         "What is my copay?",
+
         "What is my deductible?",
+
         "What is monthly premium?",
+
         "Claim status",
+
         "Bronze coverage",
+
         "Silver maternity",
+
         "Gold mental health",
+
         "Hospital coverage",
+
         "Enrollment eligibility",
+
         "Bronze deductible and maternity"
 
     ]
 
     print("=" * 70)
-    print("DAY 11 RETRIEVAL TEST")
+
+    print(
+        "DAY 11 RETRIEVAL TEST"
+    )
+
     print("=" * 70)
 
-    for i, question in enumerate(questions, start=1):
+    print()
 
-        print("\n")
+    print(
+        f"SQLite DB: {SQLITE_DB_PATH}"
+    )
+
+    print(
+        f"ChromaDB: {CHROMA_DB_PATH}"
+    )
+
+    print(
+        f"Collection: {collection.name}"
+    )
+
+    print()
+
+    for i, question in enumerate(
+        questions,
+        start=1
+    ):
+
         print("=" * 70)
-        print(f"Question {i}: {question}")
+
+        print(
+            f"Question {i}: {question}"
+        )
+
         print("-" * 70)
 
-        print(retrieve(question))
+        print(
+            retrieve(question)
+        )
+
+        print()
 
     conn.close()
