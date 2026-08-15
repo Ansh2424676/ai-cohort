@@ -43,8 +43,14 @@ except Exception as error:
     st.stop()
 
 
-# Make sure required columns exist
-required_columns = ["plan_id", "plan_name"]
+# ============================================================
+# Validate Required Columns
+# ============================================================
+
+required_columns = [
+    "plan_id",
+    "plan_name"
+]
 
 missing_columns = [
     column
@@ -53,10 +59,12 @@ missing_columns = [
 ]
 
 if missing_columns:
+
     st.error(
         f"plans.csv is missing required columns: "
         f"{', '.join(missing_columns)}"
     )
+
     st.stop()
 
 
@@ -64,7 +72,11 @@ if missing_columns:
 # Prepare Plan Options
 # ============================================================
 
-plan_ids = plans_df["plan_id"].astype(str).tolist()
+plan_ids = (
+    plans_df["plan_id"]
+    .astype(str)
+    .tolist()
+)
 
 plan_names = dict(
     zip(
@@ -75,7 +87,11 @@ plan_names = dict(
 
 
 def format_plan(plan_id):
-    return f"{plan_id} - {plan_names.get(plan_id, '')}"
+
+    return (
+        f"{plan_id} - "
+        f"{plan_names.get(plan_id, '')}"
+    )
 
 
 # ============================================================
@@ -83,14 +99,19 @@ def format_plan(plan_id):
 # ============================================================
 
 if "session_id" not in st.session_state:
-    st.session_state.session_id = str(uuid.uuid4())
+
+    st.session_state.session_id = str(
+        uuid.uuid4()
+    )
 
 
 if "messages" not in st.session_state:
+
     st.session_state.messages = []
 
 
 if "member_id" not in st.session_state:
+
     st.session_state.member_id = plan_ids[0]
 
 
@@ -115,6 +136,7 @@ with st.sidebar:
 
     st.divider()
 
+
     # --------------------------------------------------------
     # New Conversation
     # --------------------------------------------------------
@@ -124,13 +146,17 @@ with st.sidebar:
         use_container_width=True
     ):
 
-        st.session_state.session_id = str(uuid.uuid4())
+        st.session_state.session_id = str(
+            uuid.uuid4()
+        )
 
         st.session_state.messages = []
 
         st.rerun()
 
+
     st.divider()
+
 
     # --------------------------------------------------------
     # Session ID
@@ -147,7 +173,9 @@ with st.sidebar:
 # Main Chat UI
 # ============================================================
 
-st.title("💬 Healthcare Coverage Assistant")
+st.title(
+    "💬 Healthcare Coverage Assistant"
+)
 
 st.write(
     "Ask questions about your healthcare coverage, "
@@ -161,9 +189,13 @@ st.write(
 
 for message in st.session_state.messages:
 
-    with st.chat_message(message["role"]):
+    with st.chat_message(
+        message["role"]
+    ):
 
-        st.markdown(message["content"])
+        st.markdown(
+            message["content"]
+        )
 
 
 # ============================================================
@@ -182,7 +214,7 @@ user_message = st.chat_input(
 if user_message:
 
     # --------------------------------------------------------
-    # Display user message
+    # Display User Message
     # --------------------------------------------------------
 
     with st.chat_message("user"):
@@ -191,7 +223,7 @@ if user_message:
 
 
     # --------------------------------------------------------
-    # Store user message
+    # Store User Message
     # --------------------------------------------------------
 
     st.session_state.messages.append(
@@ -203,7 +235,7 @@ if user_message:
 
 
     # --------------------------------------------------------
-    # Backend payload
+    # Backend Payload
     # --------------------------------------------------------
 
     payload = {
@@ -213,39 +245,176 @@ if user_message:
     }
 
 
-    # --------------------------------------------------------
-    # Call FastAPI backend
-    # --------------------------------------------------------
+    # ========================================================
+    # STREAMING RESPONSE
+    # ========================================================
 
     try:
 
         with st.chat_message("assistant"):
 
-            with st.spinner("Thinking..."):
+            # ------------------------------------------------
+            # Loading Indicator
+            # ------------------------------------------------
 
-                response = requests.post(
-                    f"{BACKEND_URL}/chat",
-                    json=payload,
-                    timeout=60
-                )
+            loading_placeholder = st.empty()
 
+            loading_placeholder.markdown(
+                "⏳ Thinking..."
+            )
+
+
+            # ------------------------------------------------
+            # Streaming Request
+            # ------------------------------------------------
+
+            response = requests.post(
+                f"{BACKEND_URL}/chat",
+                json=payload,
+                stream=True,
+                timeout=(10, 120)
+            )
 
             response.raise_for_status()
 
-            data = response.json()
 
-            assistant_response = data.get(
-                "response",
-                "Sorry, I could not generate a response."
-            )
+            # ------------------------------------------------
+            # Response Placeholder
+            # ------------------------------------------------
 
-            st.markdown(
-                assistant_response
-            )
+            response_placeholder = st.empty()
+
+            assistant_response = ""
+
+            first_chunk_received = False
+
+
+            # ------------------------------------------------
+            # Read SSE Stream
+            # ------------------------------------------------
+
+            for line in response.iter_lines(
+                decode_unicode=True
+            ):
+
+                if not line:
+
+                    continue
+
+
+                # ------------------------------------------------
+                # Process only SSE data lines
+                # ------------------------------------------------
+
+                if not line.startswith("data:"):
+
+                    continue
+
+
+                # ------------------------------------------------
+                # Extract data
+                # ------------------------------------------------
+
+                data = line[
+                    len("data:"):
+                ]
+
+
+                # Remove ONLY the separator space
+                # after "data:".
+                #
+                # Do NOT use .strip() because it removes
+                # meaningful spaces from streamed chunks.
+
+                if data.startswith(" "):
+
+                    data = data[1:]
+
+
+                # ------------------------------------------------
+                # DONE Event
+                # ------------------------------------------------
+
+                if data.startswith("[DONE]"):
+
+                    loading_placeholder.empty()
+
+                    continue
+
+
+                # ------------------------------------------------
+                # ERROR Event
+                # ------------------------------------------------
+
+                if data.startswith("[ERROR]"):
+
+                    loading_placeholder.empty()
+
+                    error_text = data.replace(
+                        "[ERROR]",
+                        "",
+                        1
+                    ).strip()
+
+                    st.error(
+                        error_text
+                    )
+
+                    continue
+
+
+                # ------------------------------------------------
+                # First Chunk
+                # ------------------------------------------------
+
+                if not first_chunk_received:
+
+                    first_chunk_received = True
+
+                    loading_placeholder.empty()
+
+
+                # ------------------------------------------------
+                # Append Streamed Chunk
+                # ------------------------------------------------
+
+                assistant_response += data
+
+
+                # ------------------------------------------------
+                # Update UI
+                # ------------------------------------------------
+
+                response_placeholder.markdown(
+                    assistant_response
+                )
+
+
+            # ------------------------------------------------
+            # Remove Loading Indicator
+            # ------------------------------------------------
+
+            loading_placeholder.empty()
+
+
+            # ------------------------------------------------
+            # Empty Response Fallback
+            # ------------------------------------------------
+
+            if not assistant_response:
+
+                assistant_response = (
+                    "Sorry, I could not generate "
+                    "a response."
+                )
+
+                response_placeholder.markdown(
+                    assistant_response
+                )
 
 
         # ----------------------------------------------------
-        # Store assistant response
+        # Store Assistant Response
         # ----------------------------------------------------
 
         st.session_state.messages.append(
@@ -269,7 +438,9 @@ if user_message:
 
         with st.chat_message("assistant"):
 
-            st.error(error_message)
+            st.error(
+                error_message
+            )
 
 
     except requests.exceptions.Timeout:
@@ -281,7 +452,9 @@ if user_message:
 
         with st.chat_message("assistant"):
 
-            st.error(error_message)
+            st.error(
+                error_message
+            )
 
 
     except requests.exceptions.HTTPError as error:
@@ -292,7 +465,9 @@ if user_message:
 
         with st.chat_message("assistant"):
 
-            st.error(error_message)
+            st.error(
+                error_message
+            )
 
 
     except Exception as error:
@@ -303,4 +478,6 @@ if user_message:
 
         with st.chat_message("assistant"):
 
-            st.error(error_message)
+            st.error(
+                error_message
+            )

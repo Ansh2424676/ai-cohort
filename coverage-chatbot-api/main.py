@@ -1,9 +1,10 @@
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Generator
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 
@@ -70,11 +71,12 @@ def root():
 
 
 # ============================================================
-# POST /chat
+# SSE STREAM GENERATOR
 # ============================================================
 
-@app.post("/chat")
-def chat(request: ChatRequest):
+def generate_stream(
+    request: ChatRequest
+) -> Generator[str, None, None]:
 
     start_time = time.time()
 
@@ -139,7 +141,7 @@ Do not invent information.
 
 
         # ----------------------------------------------------
-        # Generate answer
+        # Generate answer using existing pipeline
         # ----------------------------------------------------
 
         answer = ask_with_tools(
@@ -162,7 +164,32 @@ Do not invent information.
 
 
         # ----------------------------------------------------
-        # Response time
+        # Stream answer in small chunks
+        # ----------------------------------------------------
+
+        chunk_size = 10
+
+        for i in range(
+            0,
+            len(answer),
+            chunk_size
+        ):
+
+            chunk = answer[
+                i:i + chunk_size
+            ]
+
+
+            # SSE format
+            yield f"data: {chunk}\n\n"
+
+
+            # Small delay so streaming is visible
+            time.sleep(0.03)
+
+
+        # ----------------------------------------------------
+        # Completion event
         # ----------------------------------------------------
 
         elapsed = round(
@@ -171,35 +198,22 @@ Do not invent information.
         )
 
 
+        yield (
+            f"data: [DONE] "
+            f"{elapsed}s\n\n"
+        )
+
+
+        # ----------------------------------------------------
+        # Console log
+        # ----------------------------------------------------
+
         print(
             f"[CHAT] "
             f"session={request.session_id} "
             f"member={request.member_id} "
             f"time={elapsed}s"
         )
-
-
-        # ----------------------------------------------------
-        # API RESPONSE
-        # ----------------------------------------------------
-
-        return {
-
-            "session_id":
-                request.session_id,
-
-            "member_id":
-                request.member_id,
-
-            "message":
-                request.message,
-
-            "response":
-                answer,
-
-            "response_time_seconds":
-                elapsed
-        }
 
 
     except Exception as error:
@@ -218,10 +232,32 @@ Do not invent information.
         )
 
 
-        raise HTTPException(
-            status_code=500,
-            detail="Unable to generate chatbot response."
+        # SSE error event
+        yield (
+            "data: [ERROR] "
+            "Unable to generate chatbot response.\n\n"
         )
+
+
+# ============================================================
+# POST /chat - SSE STREAMING
+# ============================================================
+
+@app.post("/chat")
+def chat(request: ChatRequest):
+
+    return StreamingResponse(
+
+        generate_stream(request),
+
+        media_type="text/event-stream",
+
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
 
 
 # ============================================================
