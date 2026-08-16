@@ -1,9 +1,15 @@
+import json
 import uuid
 from pathlib import Path
 
 import pandas as pd
 import requests
 import streamlit as st
+
+from response_cards import (
+    ClaimStatusCard,
+    CoverageSummaryCard
+)
 
 
 # ============================================================
@@ -279,12 +285,16 @@ if user_message:
 
 
             # ------------------------------------------------
-            # Response Placeholder
+            # Response State
             # ------------------------------------------------
 
             response_placeholder = st.empty()
 
             assistant_response = ""
+
+            citation_chunk_ids = []
+
+            rich_outputs = {}
 
             first_chunk_received = False
 
@@ -298,36 +308,25 @@ if user_message:
             ):
 
                 if not line:
-
                     continue
-
 
                 # ------------------------------------------------
                 # Process only SSE data lines
                 # ------------------------------------------------
 
                 if not line.startswith("data:"):
-
                     continue
-
 
                 # ------------------------------------------------
                 # Extract data
                 # ------------------------------------------------
 
-                data = line[
-                    len("data:"):
-                ]
+                data = line[len("data:"):]
 
-
-                # Remove ONLY the separator space
-                # after "data:".
-                #
-                # Do NOT use .strip() because it removes
-                # meaningful spaces from streamed chunks.
+                # Remove only the separator space after "data:".
+                # Do not strip normal streamed answer content.
 
                 if data.startswith(" "):
-
                     data = data[1:]
 
 
@@ -364,7 +363,68 @@ if user_message:
 
 
                 # ------------------------------------------------
-                # First Chunk
+                # Day 19 - Citation Metadata
+                # ------------------------------------------------
+
+                if data.startswith("[CITATIONS]"):
+
+                    citation_text = data.replace(
+                        "[CITATIONS]",
+                        "",
+                        1
+                    ).strip()
+
+                    try:
+
+                        citation_payload = json.loads(
+                            citation_text
+                        )
+
+                        citation_chunk_ids = (
+                            citation_payload.get(
+                                "citation_chunk_ids",
+                                []
+                            )
+                        )
+
+                    except json.JSONDecodeError:
+
+                        st.warning(
+                            "Unable to read citation metadata."
+                        )
+
+                    continue
+
+
+                # ------------------------------------------------
+                # Day 19 - Rich Output Metadata
+                # ------------------------------------------------
+
+                if data.startswith("[RICH_OUTPUTS]"):
+
+                    rich_text = data.replace(
+                        "[RICH_OUTPUTS]",
+                        "",
+                        1
+                    ).strip()
+
+                    try:
+
+                        rich_outputs = json.loads(
+                            rich_text
+                        )
+
+                    except json.JSONDecodeError:
+
+                        st.warning(
+                            "Unable to read rich output metadata."
+                        )
+
+                    continue
+
+
+                # ------------------------------------------------
+                # First Answer Chunk
                 # ------------------------------------------------
 
                 if not first_chunk_received:
@@ -375,15 +435,10 @@ if user_message:
 
 
                 # ------------------------------------------------
-                # Append Streamed Chunk
+                # Append Normal Answer Chunk
                 # ------------------------------------------------
 
                 assistant_response += data
-
-
-                # ------------------------------------------------
-                # Update UI
-                # ------------------------------------------------
 
                 response_placeholder.markdown(
                     assistant_response
@@ -411,6 +466,150 @@ if user_message:
                 response_placeholder.markdown(
                     assistant_response
                 )
+
+
+            # ====================================================
+            # Day 19 - Rich Outputs
+            # ====================================================
+
+            # ----------------------------------------------------
+            # Claim Status Card
+            # ----------------------------------------------------
+
+            claim_data = rich_outputs.get(
+                "claim_status_card"
+            )
+
+            if claim_data:
+
+                try:
+
+                    claim_card = ClaimStatusCard(
+                        **claim_data
+                    )
+
+                    with st.container(border=True):
+
+                        st.subheader(
+                            "📋 Claim Status"
+                        )
+
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+
+                            st.metric(
+                                "Claim ID",
+                                claim_card.claim_id
+                            )
+
+                            st.metric(
+                                "Status",
+                                claim_card.status
+                            )
+
+                        with col2:
+
+                            st.metric(
+                                "Amount",
+                                f"${claim_card.amount:,.2f}"
+                            )
+
+                            st.caption(
+                                f"Claim Date: "
+                                f"{claim_card.date}"
+                            )
+
+                except Exception as error:
+
+                    st.warning(
+                        f"Unable to render claim card: {error}"
+                    )
+
+
+            # ----------------------------------------------------
+            # Coverage Summary Card
+            # ----------------------------------------------------
+
+            coverage_data = rich_outputs.get(
+                "coverage_summary_card"
+            )
+
+            if coverage_data:
+
+                try:
+
+                    coverage_card = CoverageSummaryCard(
+                        **coverage_data
+                    )
+
+                    with st.container(border=True):
+
+                        st.subheader(
+                            "🛡️ Coverage Summary"
+                        )
+
+                        col1, col2 = st.columns(2)
+
+                        with col1:
+
+                            st.write("**Plan**")
+
+                            st.write(
+                                coverage_card.plan_name
+                            )
+
+                            st.write("**Deductible**")
+
+                            st.write(
+                                f"${coverage_card.deductible:,.2f}"
+                            )
+
+                        with col2:
+
+                            st.write("**Copay**")
+
+                            st.write(
+                                f"${coverage_card.copay:,.2f}"
+                            )
+
+                            if coverage_card.covered:
+
+                                st.success(
+                                    "Covered"
+                                )
+
+                            else:
+
+                                st.error(
+                                    "Not Covered"
+                                )
+
+                except Exception as error:
+
+                    st.warning(
+                        f"Unable to render coverage card: {error}"
+                    )
+
+
+            # ----------------------------------------------------
+            # Policy Sources / Citations
+            # ----------------------------------------------------
+
+            if citation_chunk_ids:
+
+                with st.expander(
+                    "📚 Policy Sources"
+                ):
+
+                    for index, citation_id in enumerate(
+                        citation_chunk_ids,
+                        start=1
+                    ):
+
+                        st.markdown(
+                            f"**[{index}]** `{citation_id}`"
+                        )
 
 
         # ----------------------------------------------------
