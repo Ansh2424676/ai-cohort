@@ -11,7 +11,16 @@ from retrieval_engine import vector_lookup
 # ============================================================
 
 ROOT_DIR = Path(__file__).resolve().parent
-DATABASE_PATH = ROOT_DIR / "coverage.db"
+
+# Prefer coverage.db in project root.
+# If it does not exist, use the Day 20/24 chatbot database.
+ROOT_DATABASE_PATH = ROOT_DIR / "coverage.db"
+CHATBOT_DATABASE_PATH = ROOT_DIR / "coverage-chatbot-api" / "coverage.db"
+
+if ROOT_DATABASE_PATH.exists():
+    DATABASE_PATH = ROOT_DATABASE_PATH
+else:
+    DATABASE_PATH = CHATBOT_DATABASE_PATH
 
 
 # ============================================================
@@ -45,7 +54,10 @@ def check_coverage(question: str) -> str:
 
     output = []
 
-    # Day 10 vector retrieval
+    # --------------------------------------------------------
+    # Vector retrieval
+    # --------------------------------------------------------
+
     try:
         vector_results = vector_lookup(question)
 
@@ -58,7 +70,10 @@ def check_coverage(question: str) -> str:
     except Exception as error:
         output.append(f"Vector lookup error: {error}")
 
-    # Day 4 plans table
+    # --------------------------------------------------------
+    # Plans database
+    # --------------------------------------------------------
+
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -92,7 +107,7 @@ def check_coverage(question: str) -> str:
                     deductible,
                     copay,
                     coverage_type,
-                    network_tier
+                    network_tier,
                 ) = plan
 
                 output.append(
@@ -106,6 +121,10 @@ def check_coverage(question: str) -> str:
 
     except Exception as error:
         output.append(f"Plans database error: {error}")
+
+    # --------------------------------------------------------
+    # Final response
+    # --------------------------------------------------------
 
     if not output:
         return "No coverage information found."
@@ -140,7 +159,7 @@ def get_claim_status(claim_id: str) -> str:
             FROM claims
             WHERE claim_id = ?
             """,
-            (claim_id,)
+            (claim_id,),
         )
 
         claim = cursor.fetchone()
@@ -156,7 +175,7 @@ def get_claim_status(claim_id: str) -> str:
             procedure,
             claim_amount,
             status,
-            date_filed
+            date_filed,
         ) = claim
 
         return (
