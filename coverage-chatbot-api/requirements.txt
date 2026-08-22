@@ -5,3 +5,4 @@ openai
 pydantic
 chromadb
 tiktoken
+guardrails-ai

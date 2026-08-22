@@ -30,6 +30,10 @@ sys.path.insert(
 # EXISTING PIPELINES
 # ============================================================
 
+# DAY 25 - Governance & Guardrails
+from redact_pii import redact_pii
+from guardrails_config import check_input_guardrail, apply_output_guardrails
+
 from retrieval_engine import retrieve
 from tool_calling_chatbot import ask_with_tools
 
@@ -1087,13 +1091,42 @@ def generate_stream(
     try:
 
         # ----------------------------------------------------
-        # Save user message
+        # DAY 25 - INPUT GUARDRAIL
         # ----------------------------------------------------
 
+        allowed, guardrail_reason = check_input_guardrail(
+            request.message
+        )
+
+        if not allowed:
+            blocked_response = (
+                "I can't help with prompt-injection attempts or another member's "
+                "private claim/coverage information. I can help with your own "
+                "coverage information."
+            )
+
+            # Store only redacted user input in conversation history.
+            save_message(
+                request.session_id,
+                "user",
+                redact_pii(request.message)
+            )
+
+            save_message(
+                request.session_id,
+                "assistant",
+                blocked_response
+            )
+
+            yield f"data: {blocked_response}\n\n"
+            yield "data: [DONE] 0s\n\n"
+            return
+
+        # Store only redacted user input in persistent history.
         save_message(
             request.session_id,
             "user",
-            request.message
+            redact_pii(request.message)
         )
 
         # ----------------------------------------------------
@@ -1177,6 +1210,12 @@ def generate_stream(
             answer = str(
                 answer
             )
+
+        # ----------------------------------------------------
+        # DAY 25 - FINAL OUTPUT GUARDRAIL
+        # ----------------------------------------------------
+
+        answer = apply_output_guardrails(answer)
 
         # ----------------------------------------------------
         # Save assistant response
